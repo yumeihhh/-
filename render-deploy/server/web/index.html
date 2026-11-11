@@ -1,0 +1,890 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>炸金花</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+    background: #0e1a13;
+    color: #f2f2f2;
+    min-height: 100%;
+  }
+  #app { max-width: 860px; margin: 0 auto; padding: 12px 12px 40px; }
+  .screen { display: none; }
+  .screen.active { display: block; }
+  h1.title {
+    text-align: center; font-size: 44px; letter-spacing: 10px; color: #FFC400;
+    text-shadow: 0 3px 0 #7a5b00, 0 6px 18px rgba(0,0,0,.6);
+    margin: 26px 0 6px;
+  }
+  .subtitle { text-align: center; color: #9fb3a4; font-size: 14px; margin-bottom: 26px; }
+  .panel {
+    background: #16241b; border: 1px solid #2c4636; border-radius: 14px;
+    padding: 18px; margin-bottom: 14px;
+  }
+  .panel h2 { font-size: 17px; color: #FFC400; margin-bottom: 12px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  label { font-size: 14px; color: #c9d6cd; }
+  input[type=text], input[type=password], input[type=number], select {
+    background: #0d1a12; color: #f2f2f2; border: 1px solid #3a5a44;
+    border-radius: 10px; padding: 11px 12px; font-size: 16px; outline: none;
+    width: 100%;
+  }
+  input:focus, select:focus { border-color: #FFC400; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; margin-bottom: 6px; }
+  .btn {
+    background: #FFC400; color: #201600; border: none; border-radius: 999px;
+    padding: 12px 22px; font-size: 16px; font-weight: 700; cursor: pointer;
+    box-shadow: 0 3px 0 #8a6d00;
+  }
+  .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #8a6d00; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+  .btn.secondary { background: #22402e; color: #e8f2ea; box-shadow: 0 3px 0 #122419; border: 1px solid #3a5a44; }
+  .btn.danger { background: #c0392b; color: #fff; box-shadow: 0 3px 0 #6e1f16; }
+  .btn.small { padding: 8px 14px; font-size: 14px; }
+  .btn.block { width: 100%; }
+  .btnrow { display: flex; gap: 10px; }
+  .btnrow .btn { flex: 1; }
+  #toast {
+    position: fixed; left: 50%; top: 14px; transform: translateX(-50%) translateY(-8px);
+    background: #c0392b; color: #fff; padding: 10px 18px; border-radius: 999px;
+    font-size: 15px; font-weight: 700; box-shadow: 0 6px 24px rgba(0,0,0,.5);
+    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 100;
+    max-width: 92vw; text-align: center;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.ok { background: #1e8e4a; }
+  .mebar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .mebar .who { font-size: 18px; font-weight: 700; }
+  .mebar .pts { font-size: 16px; color: #FFC400; font-weight: 700; }
+  .mebar .pts small { color: #9fb3a4; font-weight: 400; font-size: 13px; }
+  .list { list-style: none; }
+  .list li {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 10px 4px; border-bottom: 1px solid #223526; font-size: 15px;
+  }
+  .list li:last-child { border-bottom: none; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #666; margin-right: 7px; vertical-align: middle; }
+  .dot.on { background: #2ecc71; box-shadow: 0 0 6px #2ecc71; }
+  .muted { color: #8ba393; font-size: 14px; }
+  .hist-delta.win { color: #2ecc71; font-weight: 700; }
+  .hist-delta.lose { color: #e74c3c; font-weight: 700; }
+  .hist-meta { font-size: 13px; color: #8ba393; }
+  /* ---- room ---- */
+  .roomhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .roomcode { font-size: 30px; font-weight: 800; letter-spacing: 6px; color: #FFC400; }
+  .roomcode small { font-size: 13px; letter-spacing: 2px; color: #9fb3a4; font-weight: 400; display: block; }
+  .countpill { background: #22402e; border: 1px solid #3a5a44; border-radius: 999px; padding: 8px 14px; font-size: 15px; }
+  .lobby-players { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+  .chip {
+    background: #0d1a12; border: 1px solid #3a5a44; border-radius: 999px;
+    padding: 8px 14px; font-size: 15px;
+  }
+  .chip.me { border-color: #FFC400; color: #FFC400; }
+  /* ---- table ---- */
+  #tableArea {
+    position: relative; height: 520px; border-radius: 18px; overflow: hidden;
+    background: radial-gradient(ellipse at 50% 42%, #145c2e 0%, #0b6b3a 45%, #073d21 100%);
+    border: 3px solid #8a6d1f; box-shadow: inset 0 0 60px rgba(0,0,0,.45), 0 8px 30px rgba(0,0,0,.5);
+    margin-bottom: 12px;
+  }
+  .felt-ring {
+    position: absolute; left: 50%; top: 46%; width: 76%; height: 68%;
+    transform: translate(-50%, -50%);
+    border: 3px solid rgba(255,196,0,.55); border-radius: 50%;
+    box-shadow: inset 0 0 40px rgba(0,0,0,.35);
+    pointer-events: none;
+  }
+  #centerInfo {
+    position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%);
+    text-align: center; z-index: 2; pointer-events: none; width: 46%;
+  }
+  #centerInfo .pot { font-size: 26px; font-weight: 800; color: #FFC400; text-shadow: 0 2px 0 rgba(0,0,0,.6); }
+  #centerInfo .pot small { font-size: 13px; color: #ffe9a8; font-weight: 400; display: block; letter-spacing: 2px; }
+  #centerInfo .betline { font-size: 14px; color: #e8f2ea; margin-top: 4px; }
+  #centerInfo .turnline { font-size: 15px; font-weight: 700; color: #fff; margin-top: 6px; }
+  #centerInfo .turnline.me { color: #FFC400; }
+  #centerInfo .lastact { font-size: 13px; color: #cfe6d4; margin-top: 6px; }
+  .seat {
+    position: absolute; transform: translate(-50%, -50%); width: 118px; text-align: center; z-index: 3;
+  }
+  .seat .who {
+    background: rgba(10, 25, 16, .85); border: 2px solid #3a5a44; border-radius: 10px;
+    padding: 5px 6px; font-size: 13px; line-height: 1.35;
+  }
+  .seat.me .who { border-color: #FFC400; }
+  .seat.turn .who { border-color: #FFC400; box-shadow: 0 0 0 2px rgba(255,196,0,.5), 0 0 14px rgba(255,196,0,.55); }
+  .seat.folded { opacity: .55; }
+  .seat .nm { font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .seat .bal { color: #FFC400; font-weight: 700; }
+  .seat .paid { color: #9fd8b4; font-size: 12px; }
+  .seat .badges { margin-top: 2px; }
+  .badge {
+    display: inline-block; font-size: 11px; font-weight: 700; border-radius: 999px;
+    padding: 1px 7px; margin: 1px 2px 0 0;
+  }
+  .badge.seen { background: #53B5F9; color: #06283d; }
+  .badge.fold { background: #555; color: #eee; }
+  .badge.left { background: #c0392b; color: #fff; }
+  .seat .cards { display: flex; justify-content: center; gap: 3px; margin-top: 5px; min-height: 46px; }
+  .seat.me .cards { min-height: 58px; }
+  .mini-card {
+    width: 34px; height: 48px; border-radius: 6px; background: #fff; color: #111;
+    border: 1px solid #999; box-shadow: 0 2px 4px rgba(0,0,0,.4);
+    font-weight: 800; font-size: 14px; line-height: 1.05; padding: 3px 2px;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  }
+  .mini-card .s { font-size: 15px; }
+  .mini-card.red { color: #d21f2b; }
+  .mini-card.back {
+    background: repeating-linear-gradient(45deg, #b03a2e 0 6px, #922b21 6px 12px);
+    border: 1px solid #6e1f16; color: transparent;
+  }
+  .seat.me .mini-card { width: 44px; height: 62px; font-size: 18px; }
+  .seat.me .mini-card .s { font-size: 19px; }
+  .seat.me .mini-card.back { width: 44px; height: 62px; }
+  .seat.clickable { cursor: pointer; }
+  .seat.clickable .who { border-color: #FFC400; box-shadow: 0 0 0 2px rgba(255,196,0,.6), 0 0 16px rgba(255,196,0,.7); }
+  .seat.picked .who { border-color: #FFC400; background: #3a2f00; box-shadow: 0 0 0 3px #FFC400; }
+  #actionBar {
+    background: #16241b; border: 1px solid #2c4636; border-radius: 14px; padding: 14px;
+  }
+  #actionBar .status { text-align: center; font-size: 15px; color: #c9d6cd; margin-bottom: 10px; }
+  #actionBar .status.me { color: #FFC400; font-weight: 700; }
+  .actgrid { display: flex; gap: 10px; flex-wrap: wrap; }
+  .actgrid .btn { flex: 1 1 30%; min-width: 120px; }
+  .raisebox { display: flex; gap: 8px; flex: 1 1 100%; align-items: center; }
+  .raisebox input { flex: 1; }
+  .raisebox .cost { font-size: 14px; color: #FFC400; white-space: nowrap; }
+  #compareBar { margin-top: 10px; padding: 10px; border: 1px dashed #FFC400; border-radius: 10px; text-align: center; }
+  #compareBar .hint { font-size: 14px; margin-bottom: 8px; }
+  /* ---- modal ---- */
+  .modal {
+    position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 50;
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  .modal.hidden { display: none; }
+  .modal .box {
+    background: #16241b; border: 2px solid #FFC400; border-radius: 16px;
+    padding: 22px; width: 100%; max-width: 480px; max-height: 86vh; overflow: auto;
+  }
+  .modal .box h2 { text-align: center; color: #FFC400; font-size: 24px; margin-bottom: 6px; }
+  .modal .box .sub { text-align: center; color: #c9d6cd; font-size: 15px; margin-bottom: 14px; }
+  .res-row { display: flex; justify-content: space-between; gap: 8px; padding: 9px 2px; border-bottom: 1px solid #223526; font-size: 15px; }
+  .res-row:last-child { border-bottom: none; }
+  .res-row .d-win { color: #2ecc71; font-weight: 700; }
+  .res-row .d-lose { color: #e74c3c; font-weight: 700; }
+  @media (max-width: 640px) {
+    h1.title { font-size: 34px; letter-spacing: 6px; }
+    #tableArea { height: 440px; }
+    .seat { width: 96px; }
+    .seat .who { font-size: 12px; }
+    .mini-card { width: 28px; height: 40px; font-size: 12px; }
+    .mini-card .s { font-size: 13px; }
+    .seat.me .mini-card { width: 36px; height: 52px; font-size: 15px; }
+    .seat.me .mini-card .s { font-size: 16px; }
+    #centerInfo .pot { font-size: 22px; }
+    .roomcode { font-size: 24px; letter-spacing: 4px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="toast"></div>
+
+  <!-- ============ 登录 ============ -->
+  <div id="screen-login" class="screen active">
+    <h1 class="title">炸金花</h1>
+    <p class="subtitle">3–10 人联机 · 豹子最大 · 底分 10 · 单注上限 1000</p>
+    <div class="panel" style="max-width:420px;margin:0 auto;">
+      <div class="field">
+        <label>昵称</label>
+        <input type="text" id="loginUser" maxlength="16" placeholder="1–16 个字" autocomplete="username">
+      </div>
+      <div class="field">
+        <label>密码</label>
+        <input type="password" id="loginPass" maxlength="32" placeholder="4–32 位" autocomplete="current-password">
+      </div>
+      <div class="btnrow">
+        <button class="btn secondary" id="btnRegister">注册</button>
+        <button class="btn" id="btnLogin">登录</button>
+      </div>
+      <p class="muted" style="margin-top:12px;">首次使用请先注册；分数跟账号走，初始 1000 分，输光当天不能玩，次日恢复。</p>
+    </div>
+  </div>
+
+  <!-- ============ 主页 ============ -->
+  <div id="screen-home" class="screen">
+    <div class="panel mebar">
+      <div><span class="who" id="homeUser"></span> <span class="pts"><span id="homePoints">0</span> 分 <small>· 输光当天不能玩</small></span></div>
+      <button class="btn secondary small" id="btnLogout">退出登录</button>
+    </div>
+
+    <div class="panel">
+      <h2>开一局</h2>
+      <div class="row" style="margin-bottom:12px;">
+        <label>房间人数</label>
+        <select id="roomSize" style="width:110px;">
+          <option value="3">3 人</option><option value="4">4 人</option><option value="5">5 人</option>
+          <option value="6" selected>6 人</option><option value="7">7 人</option><option value="8">8 人</option>
+          <option value="9">9 人</option><option value="10">10 人</option>
+        </select>
+        <button class="btn" id="btnCreateRoom">创建房间</button>
+      </div>
+      <div class="row">
+        <input type="text" id="joinCode" maxlength="6" inputmode="numeric" placeholder="输入 6 位邀请码" style="flex:1;min-width:140px;">
+        <button class="btn secondary" id="btnJoinRoom">加入房间</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>好友</h2>
+      <ul class="list" id="friendList"><li class="muted">暂无好友</li></ul>
+      <div class="row" style="margin-top:12px;">
+        <input type="text" id="addFriendName" maxlength="16" placeholder="输入对方昵称" style="flex:1;min-width:140px;">
+        <button class="btn secondary small" id="btnAddFriend">加好友</button>
+      </div>
+      <div id="requestBox" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="panel">
+      <h2>对局记录</h2>
+      <ul class="list" id="historyList"><li class="muted">暂无记录</li></ul>
+    </div>
+  </div>
+
+  <!-- ============ 房间 ============ -->
+  <div id="screen-room" class="screen">
+    <div class="panel roomhead">
+      <div class="roomcode"><small>邀请码</small><span id="roomCode">------</span>
+        <button class="btn secondary small" id="btnCopyCode" style="vertical-align:middle;">复制</button>
+      </div>
+      <div class="row">
+        <span class="countpill" id="roomCount">0/6</span>
+        <button class="btn danger small" id="btnLeaveRoom">退出房间</button>
+      </div>
+    </div>
+
+    <!-- 等待大厅 -->
+    <div id="lobbyBox" class="panel">
+      <h2>等待开始</h2>
+      <div class="lobby-players" id="lobbyPlayers"></div>
+      <p class="muted" id="lobbyHint">等朋友进来，人够 3 个房主就能开始。</p>
+      <div class="btnrow" style="margin-top:12px;">
+        <button class="btn" id="btnStartGame">开始游戏</button>
+      </div>
+    </div>
+
+    <!-- 牌桌 -->
+    <div id="tableBox" style="display:none;">
+      <div id="tableArea">
+        <div class="felt-ring"></div>
+        <div id="centerInfo">
+          <div class="pot"><small>底池</small><span id="potVal">0</span></div>
+          <div class="betline" id="betLine">当前注 10 · 第 1/15 轮</div>
+          <div class="turnline" id="turnLine">—</div>
+          <div class="lastact" id="lastAct"></div>
+        </div>
+        <div id="seats"></div>
+      </div>
+      <div id="actionBar">
+        <div class="status" id="actionStatus">—</div>
+        <div class="actgrid" id="actGrid" style="display:none;">
+          <button class="btn secondary" id="btnLook">看牌</button>
+          <button class="btn" id="btnCall">跟注</button>
+          <button class="btn secondary" id="btnCompare">比牌</button>
+          <button class="btn danger" id="btnFold">弃牌</button>
+          <div class="raisebox">
+            <input type="number" id="raiseTo" min="1" max="1000" step="10" placeholder="加注到多少">
+            <span class="cost" id="raiseCost"></span>
+            <button class="btn" id="btnRaise">加注</button>
+          </div>
+        </div>
+        <div id="compareBar" style="display:none;">
+          <div class="hint" id="compareHint">点一位玩家比牌</div>
+          <div class="btnrow">
+            <button class="btn" id="btnConfirmCompare">确认比牌</button>
+            <button class="btn secondary" id="btnCancelCompare">取消</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 结算弹窗 -->
+<div id="resultModal" class="modal hidden">
+  <div class="box">
+    <h2>本局结束</h2>
+    <p class="sub" id="resultSub"></p>
+    <div id="resultRows"></div>
+    <div class="btnrow" style="margin-top:16px;">
+      <button class="btn block" id="btnCloseResult">返回房间</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ---------- helpers ---------- */
+function $(id) { return document.getElementById(id); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+var toastTimer = null;
+function toast(msg, ok) {
+  var t = $('toast');
+  t.textContent = msg;
+  t.className = ok ? 'show ok' : 'show';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.className = ''; }, 2600);
+}
+
+/* ---------- state ---------- */
+var S = {
+  token: localStorage.getItem('zj_token') || '',
+  username: localStorage.getItem('zj_username') || '',
+  snap: null,
+  screen: 'login',
+  history: [],
+  pollTimer: null,
+  fetching: false,
+  compareMode: false,
+  compareTarget: null,
+  lastTurn: null,
+  turnStart: 0,
+  shownResultKey: '',
+  raiseInitForTurn: null,
+};
+
+function saveSession(token, username) {
+  S.token = token; S.username = username;
+  localStorage.setItem('zj_token', token);
+  localStorage.setItem('zj_username', username);
+}
+function clearSession() {
+  S.token = ''; S.username = '';
+  localStorage.removeItem('zj_token');
+  localStorage.removeItem('zj_username');
+  stopPolling();
+}
+
+/* ---------- api ---------- */
+function apiPost(msg) {
+  msg = Object.assign({}, msg);
+  if (S.token) msg.token = msg.token || S.token;
+  return fetch('/api', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(msg),
+  }).then(function (r) { return r.json(); }).then(function (data) {
+    var reply = data.reply || {};
+    if (data.snapshot) applySnapshot(data.snapshot);
+    if (reply.t === 'error') { toast(reply.msg || '出错了'); }
+    return reply;
+  }).catch(function () {
+    toast('网络不通，检查下服务器');
+    return { t: 'error', msg: '网络不通' };
+  });
+}
+
+function fetchState() {
+  if (!S.token || S.fetching) return Promise.resolve(null);
+  S.fetching = true;
+  return fetch('/api/state?token=' + encodeURIComponent(S.token), { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      S.fetching = false;
+      if (!data.snapshot) {
+        clearSession();
+        setScreen('login');
+        toast('登录已过期，请重新登录');
+        return null;
+      }
+      applySnapshot(data.snapshot);
+      return data.snapshot;
+    })
+    .catch(function () { S.fetching = false; return null; });
+}
+
+function startPolling() {
+  stopPolling();
+  S.pollTimer = setInterval(function () { fetchState(); }, 1500);
+}
+function stopPolling() {
+  if (S.pollTimer) { clearInterval(S.pollTimer); S.pollTimer = null; }
+}
+
+/* ---------- snapshot ---------- */
+function applySnapshot(snap) {
+  S.snap = snap;
+  $('homeUser').textContent = snap.username;
+  $('homePoints').textContent = snap.points;
+  if (S.screen === 'home') renderHome();
+  if (S.screen === 'room') renderRoom();
+  // 在房间里且房间没了（房散了或被移出），回主页
+  if (S.screen === 'room' && !snap.room) {
+    setScreen('home');
+    loadHistory();
+    return;
+  }
+  // 结算：房间回到等待且有新结算
+  if (snap.room && snap.room.phase === 'waiting' && snap.room.lastResult) {
+    var res = snap.room.lastResult;
+    var played = res.players && res.players.some(function (p) { return p.id === S.username; });
+    var key = JSON.stringify(res);
+    if (played && key !== S.shownResultKey) {
+      S.shownResultKey = key;
+      if (S.screen === 'room') showResult(res);
+    }
+  }
+}
+
+function setScreen(name) {
+  S.screen = name;
+  ['login', 'home', 'room'].forEach(function (n) {
+    $('screen-' + n).classList.toggle('active', n === name);
+  });
+  if (name === 'home') renderHome();
+  if (name === 'room') renderRoom();
+  window.scrollTo(0, 0);
+}
+
+/* ---------- 登录 ---------- */
+function doLogin() {
+  var u = $('loginUser').value.trim();
+  var p = $('loginPass').value;
+  if (!u) return toast('先填昵称');
+  if (p.length < 4) return toast('密码至少 4 位');
+  apiPost({ t: 'login', username: u, password: p }).then(function (r) {
+    if (r.t !== 'login' || !r.ok) return;
+    saveSession(r.token, r.username);
+    toast('登录成功', true);
+    enterApp();
+  });
+}
+function doRegister() {
+  var u = $('loginUser').value.trim();
+  var p = $('loginPass').value;
+  if (!u) return toast('先填昵称');
+  if (p.length < 4 || p.length > 32) return toast('密码 4–32 位');
+  apiPost({ t: 'register', username: u, password: p }).then(function (r) {
+    if (r.t === 'register' && r.ok) {
+      toast('注册成功，直接登录吧', true);
+      doLogin();
+    }
+  });
+}
+function doLogout() {
+  clearSession();
+  S.snap = null; S.history = [];
+  setScreen('login');
+}
+function enterApp() {
+  fetchState().then(function (snap) {
+    if (!snap) return;
+    startPolling();
+    loadHistory();
+    if (snap.room) setScreen('room'); else setScreen('home');
+  });
+}
+// 启动时尝试恢复登录
+(function restore() {
+  if (S.token) {
+    apiPost({ t: 'profile' }).then(function (r) {
+      if (r.t === 'profile') enterApp();
+      else { clearSession(); setScreen('login'); }
+    });
+  } else {
+    setScreen('login');
+  }
+})();
+
+/* ---------- 主页 ---------- */
+function renderHome() {
+  var snap = S.snap;
+  if (!snap) return;
+  $('homeUser').textContent = snap.username;
+  $('homePoints').textContent = snap.points;
+  // 好友
+  var fl = $('friendList');
+  if (!snap.friends || !snap.friends.length) {
+    fl.innerHTML = '<li class="muted">暂无好友</li>';
+  } else {
+    fl.innerHTML = snap.friends.map(function (f) {
+      return '<li><span><span class="dot' + (f.online ? ' on' : '') + '"></span>' + esc(f.username) + '</span>' +
+        '<span class="muted">' + (f.online ? '在线' : '离线') + '</span></li>';
+    }).join('');
+  }
+  // 待通过的申请
+  var rb = $('requestBox');
+  if (snap.requests && snap.requests.length) {
+    rb.innerHTML = '<h2 style="font-size:15px;color:#FFC400;margin-bottom:8px;">好友申请</h2>' +
+      snap.requests.map(function (from) {
+        return '<div class="row" style="margin-bottom:8px;"><span style="flex:1;">' + esc(from) + ' 想加你为好友</span>' +
+          '<button class="btn small" data-accept="' + esc(from) + '">通过</button></div>';
+      }).join('');
+    rb.querySelectorAll('[data-accept]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        apiPost({ t: 'friend_accept', username: b.getAttribute('data-accept') }).then(function (r) {
+          if (r.t === 'friends') { toast('已加为好友', true); fetchState(); }
+        });
+      });
+    });
+  } else {
+    rb.innerHTML = '';
+  }
+  renderHistoryList();
+}
+
+function loadHistory() {
+  if (!S.token) return;
+  apiPost({ t: 'history' }).then(function (r) {
+    if (r.t === 'history') { S.history = r.list || []; renderHistoryList(); }
+  });
+}
+function fmtTime(iso) {
+  try {
+    var d = new Date(iso);
+    var m = d.getMonth() + 1, day = d.getDate();
+    var hh = String(d.getHours()).padStart(2, '0'), mm = String(d.getMinutes()).padStart(2, '0');
+    return m + '月' + day + '日 ' + hh + ':' + mm;
+  } catch (e) { return ''; }
+}
+function renderHistoryList() {
+  var hl = $('historyList');
+  if (!S.history.length) { hl.innerHTML = '<li class="muted">暂无记录</li>'; return; }
+  hl.innerHTML = S.history.slice(0, 20).map(function (h) {
+    var me = (h.players || []).find(function (p) { return p.id === S.username; }) || {};
+    var delta = me.delta == null ? 0 : me.delta;
+    var cls = delta > 0 ? 'win' : (delta < 0 ? 'lose' : '');
+    var sign = delta > 0 ? '+' : '';
+    var names = (h.players || []).map(function (p) { return p.id; }).join('、');
+    var win = (h.winners || []).join('、');
+    return '<li><div><div><span class="hist-delta ' + cls + '">' + sign + delta + ' 分</span>' +
+      ' <span class="muted">· ' + esc(me.handText || h.winHandText || '') + '</span></div>' +
+      '<div class="hist-meta">' + fmtTime(h.time) + ' · 底池 ' + h.pot + ' · 赢家 ' + esc(win) + '</div>' +
+      '<div class="hist-meta">玩家：' + esc(names) + '</div></div></li>';
+  }).join('');
+}
+
+/* ---------- 房间 ---------- */
+function createRoom() {
+  var size = parseInt($('roomSize').value, 10) || 6;
+  apiPost({ t: 'create_room', size: size }).then(function (r) {
+    if (r.t === 'state' && r.room) { S.shownResultKey = ''; setScreen('room'); }
+  });
+}
+function joinRoom() {
+  var code = $('joinCode').value.trim();
+  if (!/^\d{6}$/.test(code)) return toast('邀请码是 6 位数字');
+  apiPost({ t: 'join_room', code: code }).then(function (r) {
+    if (r.t === 'state' && r.room) { S.shownResultKey = ''; setScreen('room'); }
+  });
+}
+function leaveRoom() {
+  S.compareMode = false; S.compareTarget = null;
+  apiPost({ t: 'leave_room' }).then(function () {
+    setScreen('home');
+    loadHistory();
+  });
+}
+function startGame() {
+  apiPost({ t: 'start_game' }).then(function (r) {
+    if (r.t === 'state') toast('发牌了', true);
+  });
+}
+
+function renderRoom() {
+  var snap = S.snap;
+  if (!snap || !snap.room) return;
+  var room = snap.room;
+  $('roomCode').textContent = room.code;
+  $('roomCount').textContent = room.players.length + '/' + room.size;
+  var playing = room.phase === 'playing' && room.game;
+  $('lobbyBox').style.display = playing ? 'none' : 'block';
+  $('tableBox').style.display = playing ? 'block' : 'none';
+  if (!playing) {
+    // 等待大厅
+    $('lobbyPlayers').innerHTML = room.players.map(function (p) {
+      return '<span class="chip' + (p.username === S.username ? ' me' : '') + '">' +
+        '<span class="dot' + (p.online ? ' on' : '') + '"></span>' + esc(p.username) +
+        (p.username === room.creator ? '（房主）' : '') + '</span>';
+    }).join('');
+    var isCreator = room.creator === S.username;
+    var btn = $('btnStartGame');
+    btn.style.display = isCreator ? '' : 'none';
+    btn.disabled = room.players.length < 3;
+    $('lobbyHint').textContent = isCreator
+      ? (room.players.length < 3 ? '还差 ' + (3 - room.players.length) + ' 人才能开始。' : '人够了，点开始游戏发牌。')
+      : '等房主开始游戏，至少 3 人。';
+  } else {
+    renderTable(room.game);
+  }
+}
+
+/* ---------- 牌桌 ---------- */
+function myPlayer(game) {
+  return game.players.find(function (p) { return p.id === S.username; }) || null;
+}
+function callCost(game, me) {
+  return Math.min(game.currentBet * (me.seen ? 2 : 1), game.maxBet);
+}
+function compareCost(game, me) {
+  return Math.min(game.currentBet * 2 * (me.seen ? 2 : 1), game.maxBet);
+}
+function raiseCost(game, me, to) {
+  return Math.min(to * (me.seen ? 2 : 1), game.maxBet);
+}
+
+function cardFaceHTML(card) {
+  // card like "A♠" "10♥" "Q♦"
+  var rank = card.slice(0, -1);
+  var suit = card.slice(-1);
+  var red = (suit === '♥' || suit === '♦');
+  return '<div class="mini-card' + (red ? ' red' : '') + '"><span>' + esc(rank) + '</span><span class="s">' + esc(suit) + '</span></div>';
+}
+function cardBackHTML() { return '<div class="mini-card back">·</div>'; }
+
+function seatPos(k, n) {
+  var cx = 50, cy = 46, rx = 44, ry = 36;
+  var ang = (90 + k * 360 / n) * Math.PI / 180;
+  return { x: cx + rx * Math.cos(ang), y: cy + ry * Math.sin(ang) };
+}
+
+function renderTable(game) {
+  var me = myPlayer(game);
+  var n = game.players.length;
+  var mySeat = me ? me.seat : 0;
+  // 轮次计时（本地估算：轮到谁就从那时起算 60 秒）
+  if (game.turn !== S.lastTurn) { S.lastTurn = game.turn; S.turnStart = Date.now(); }
+  var remain = game.phase === 'betting' && game.turn
+    ? Math.max(0, 60 - Math.floor((Date.now() - S.turnStart) / 1000)) : null;
+
+  // 中央信息
+  $('potVal').textContent = game.pot;
+  $('betLine').textContent = '当前注 ' + game.currentBet + ' · 第 ' + game.round + '/' + game.maxRounds + ' 轮' +
+    (remain != null ? ' · ' + remain + 's' : '');
+  var turnEl = $('turnLine');
+  if (game.phase !== 'betting' || !game.turn) {
+    turnEl.textContent = '—';
+    turnEl.className = 'turnline';
+  } else if (game.turn === S.username) {
+    turnEl.textContent = '轮到你了';
+    turnEl.className = 'turnline me';
+  } else {
+    turnEl.textContent = '等待 ' + game.turn + ' 行动' + (remain != null ? '（' + remain + 's）' : '');
+    turnEl.className = 'turnline';
+  }
+  $('lastAct').textContent = game.lastAction && game.lastAction.detail
+    ? (game.lastAction.by ? game.lastAction.by + ' ' : '') + game.lastAction.detail : '';
+
+  // 座位
+  var seatsEl = $('seats');
+  seatsEl.innerHTML = '';
+  game.players.forEach(function (p) {
+    var k = (p.seat - mySeat + n) % n; // 我固定在底部
+    var pos = seatPos(k, n);
+    var div = document.createElement('div');
+    div.className = 'seat' + (p.id === S.username ? ' me' : '') +
+      (p.folded ? ' folded' : '') +
+      (game.turn === p.id && game.phase === 'betting' ? ' turn' : '');
+    div.style.left = pos.x + '%';
+    div.style.top = pos.y + '%';
+    var cardsHtml = '';
+    if (game.phase === 'finished') {
+      cardsHtml = (p.cards || []).map(cardFaceHTML).join('');
+    } else if (p.id === S.username) {
+      cardsHtml = p.seen ? (p.cards || []).map(cardFaceHTML).join('')
+        : cardBackHTML() + cardBackHTML() + cardBackHTML();
+    } else {
+      cardsHtml = cardBackHTML() + cardBackHTML() + cardBackHTML();
+    }
+    var badges = '';
+    if (p.seen) badges += '<span class="badge seen">看过牌</span>';
+    if (p.folded) badges += '<span class="badge fold">已弃牌</span>';
+    if (p.left) badges += '<span class="badge left">已离开</span>';
+    div.innerHTML = '<div class="who"><div class="nm">' + esc(p.id) + (p.id === S.username ? '（我）' : '') + '</div>' +
+      '<div class="bal">' + p.balance + ' 分</div>' +
+      '<div class="paid">已下 ' + p.paid + '</div>' +
+      '<div class="badges">' + badges + '</div></div>' +
+      '<div class="cards">' + cardsHtml + '</div>';
+    // 比牌选人
+    if (S.compareMode && p.id !== S.username && !p.folded && !p.left) {
+      div.classList.add('clickable');
+      if (S.compareTarget === p.id) div.classList.add('picked');
+      div.addEventListener('click', function () {
+        S.compareTarget = p.id;
+        updateCompareBar(game, me);
+        renderTable(game);
+      });
+    }
+    seatsEl.appendChild(div);
+  });
+
+  // 操作区
+  var myTurn = game.phase === 'betting' && me && !me.folded && game.turn === S.username;
+  var statusEl = $('actionStatus');
+  var grid = $('actGrid');
+  if (game.phase === 'finished') {
+    statusEl.textContent = '本局已结束';
+    statusEl.className = 'status';
+    grid.style.display = 'none';
+  } else if (!me) {
+    statusEl.textContent = '你不在本局中';
+    statusEl.className = 'status';
+    grid.style.display = 'none';
+  } else if (me.folded) {
+    statusEl.textContent = '你已弃牌，等这局结束';
+    statusEl.className = 'status';
+    grid.style.display = 'none';
+  } else if (myTurn) {
+    statusEl.textContent = '轮到你了';
+    statusEl.className = 'status me';
+    grid.style.display = 'flex';
+    var lookBtn = $('btnLook');
+    lookBtn.style.display = me.seen ? 'none' : '';
+    $('btnCall').textContent = '跟注 ' + callCost(game, me);
+    // 加注输入：轮到我时给个默认值，之后不乱改用户输入
+    if (S.raiseInitForTurn !== game.turn + ':' + game.round + ':' + game.currentBet) {
+      S.raiseInitForTurn = game.turn + ':' + game.round + ':' + game.currentBet;
+      $('raiseTo').value = game.currentBet + 10;
+    }
+    updateRaiseCost(game, me);
+  } else {
+    statusEl.textContent = game.turn ? ('等待 ' + game.turn + ' 行动') : '—';
+    statusEl.className = 'status';
+    grid.style.display = 'none';
+  }
+  updateCompareBar(game, me);
+}
+
+function updateRaiseCost(game, me) {
+  if (!game || !me) return;
+  var to = parseInt($('raiseTo').value, 10);
+  if (!isNaN(to) && to > 0) {
+    $('raiseCost').textContent = '实付 ' + raiseCost(game, me, to) + ' 分';
+  } else {
+    $('raiseCost').textContent = '';
+  }
+}
+function updateCompareBar(game, me) {
+  var bar = $('compareBar');
+  if (!S.compareMode || !game || !me) { bar.style.display = 'none'; return; }
+  bar.style.display = 'block';
+  var hint = $('compareHint');
+  if (!S.compareTarget) {
+    hint.textContent = '点一位玩家比牌（需 ' + compareCost(game, me) + ' 分）';
+  } else {
+    hint.textContent = '与 ' + S.compareTarget + ' 比牌，需 ' + compareCost(game, me) + ' 分';
+  }
+}
+
+/* ---------- 操作 ---------- */
+function doAct(act, arg) {
+  var msg = { t: 'act', act: act };
+  if (act === 'raise') msg.to = arg;
+  if (act === 'compare') msg.target = arg;
+  return apiPost(msg).then(function (r) {
+    if (r.t === 'state') {
+      S.compareMode = false; S.compareTarget = null;
+      return true;
+    }
+    return false;
+  });
+}
+
+$('btnLook').addEventListener('click', function () { doAct('look'); });
+$('btnCall').addEventListener('click', function () { doAct('call'); });
+$('btnFold').addEventListener('click', function () { doAct('fold'); });
+$('btnRaise').addEventListener('click', function () {
+  var snap = S.snap, game = snap && snap.room && snap.room.game;
+  var me = game && myPlayer(game);
+  if (!game || !me) return;
+  var to = parseInt($('raiseTo').value, 10);
+  if (isNaN(to) || to <= game.currentBet || to > game.maxBet) {
+    return toast('加注必须大于当前注 ' + game.currentBet + '，且不超过 ' + game.maxBet);
+  }
+  doAct('raise', to);
+});
+$('raiseTo').addEventListener('input', function () {
+  var snap = S.snap, game = snap && snap.room && snap.room.game;
+  var me = game && myPlayer(game);
+  updateRaiseCost(game, me);
+});
+$('btnCompare').addEventListener('click', function () {
+  S.compareMode = !S.compareMode;
+  S.compareTarget = null;
+  var snap = S.snap, game = snap && snap.room && snap.room.game;
+  var me = game && myPlayer(game);
+  updateCompareBar(game, me);
+  if (game) renderTable(game);
+  if (S.compareMode) toast('点一位玩家比牌', true);
+});
+$('btnConfirmCompare').addEventListener('click', function () {
+  if (!S.compareTarget) return toast('先点一位玩家');
+  doAct('compare', S.compareTarget);
+});
+$('btnCancelCompare').addEventListener('click', function () {
+  S.compareMode = false; S.compareTarget = null;
+  var snap = S.snap, game = snap && snap.room && snap.room.game;
+  if (game) renderTable(game);
+});
+
+/* ---------- 结算弹窗 ---------- */
+function showResult(res) {
+  $('resultSub').textContent = '赢家：' + (res.winners || []).join('、') +
+    (res.winHandText ? ' · ' + res.winHandText : '') + ' · 底池 ' + res.pot + ' 分';
+  var rows = (res.players || []).map(function (p) {
+    var cls = p.delta > 0 ? 'd-win' : (p.delta < 0 ? 'd-lose' : '');
+    var sign = p.delta > 0 ? '+' : '';
+    var cards = (p.cards || []).join(' ');
+    return '<div class="res-row"><div><strong>' + esc(p.id) + '</strong>' +
+      '<div class="muted">' + esc(p.handText || p.hand || '') + (cards ? ' · ' + esc(cards) : '') + ' · 已下 ' + p.paid + '</div></div>' +
+      '<div class="' + cls + '">' + sign + p.delta + ' 分</div></div>';
+  }).join('');
+  $('resultRows').innerHTML = rows;
+  $('resultModal').classList.remove('hidden');
+}
+$('btnCloseResult').addEventListener('click', function () {
+  $('resultModal').classList.add('hidden');
+});
+
+/* ---------- 其它按钮 ---------- */
+$('btnLogin').addEventListener('click', doLogin);
+$('btnRegister').addEventListener('click', doRegister);
+$('loginPass').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+$('loginUser').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+$('btnLogout').addEventListener('click', doLogout);
+$('btnCreateRoom').addEventListener('click', createRoom);
+$('btnJoinRoom').addEventListener('click', joinRoom);
+$('joinCode').addEventListener('keydown', function (e) { if (e.key === 'Enter') joinRoom(); });
+$('btnLeaveRoom').addEventListener('click', leaveRoom);
+$('btnStartGame').addEventListener('click', startGame);
+$('btnCopyCode').addEventListener('click', function () {
+  var code = $('roomCode').textContent.trim();
+  function done() { toast('邀请码已复制：' + code, true); }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(code).then(done, function () { toast('复制失败，手动记一下：' + code); });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = code; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { toast('复制失败，手动记一下：' + code); }
+    document.body.removeChild(ta);
+  }
+});
+$('btnAddFriend').addEventListener('click', function () {
+  var name = $('addFriendName').value.trim();
+  if (!name) return toast('先填对方昵称');
+  apiPost({ t: 'friend_add', username: name }).then(function (r) {
+    if (r.t === 'friend_add' && r.ok) { toast('好友申请已发出', true); $('addFriendName').value = ''; fetchState(); }
+  });
+});
+</script>
+</body>
+</html>

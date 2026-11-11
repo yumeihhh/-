@@ -1,0 +1,21 @@
+# Render Blueprint: deploy the Zha Jinhua web version as a Render web service
+# plus a free PostgreSQL database, so accounts/points/history survive restarts.
+# Put this file (render.yaml) at the root of the GitHub repo, then use
+# Render Dashboard -> New -> Blueprint, or New -> Web Service from the repo.
+services:
+  - type: web
+    name: zhajinhua
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: zhajinhua-db
+          property: connectionString
+databases:
+  - name: zhajinhua-db
+    plan: free
