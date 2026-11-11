@@ -28,7 +28,16 @@ function getPool() {
   } catch (e) {
     throw new Error('未安装 pg 依赖：Render 上请确认 package.json 含 pg 且已 npm install；本地请 npm install pg');
   }
-  pool = new pg.Pool({ connectionString: DATABASE_URL, max: 5 });
+  // Render 要求外网连接必须走 SSL，且证书是自签的，需关闭证书校验；
+  // 内网地址同样支持 SSL。本地 / pg-mem 等非 Render 地址不加 SSL。
+  let ssl = false;
+  try {
+    const host = new URL(DATABASE_URL).hostname;
+    if (host.endsWith('render.com') || host.startsWith('dpg-')) {
+      ssl = { rejectUnauthorized: false };
+    }
+  } catch (e) { /* URL 解析失败时保持不加 SSL */ }
+  pool = new pg.Pool({ connectionString: DATABASE_URL, max: 5, ssl });
   pool.on('error', (err) => { console.error('Postgres pool error:', err.message); });
   return pool;
 }
