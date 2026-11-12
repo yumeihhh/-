@@ -101,6 +101,29 @@ function testRoundCap() {
   console.log('game round-cap: OK');
 }
 
+// 对局结束翻开所有人的牌（含已弃牌者）
+function testRevealCards() {
+  const g = new Game(['P1', 'P2', 'P3'], { balances: { P1: 1000, P2: 1000, P3: 1000 }, deck: riggedDeck() });
+  g.act('P2', 'fold');
+  g.act('P3', 'fold');
+  assert.strictEqual(g.phase, 'finished', '剩 1 人应结束');
+  for (const p of g.result.players) {
+    assert(Array.isArray(p.cards) && p.cards.length === 3, p.id + ' 结算应亮出 3 张牌');
+  }
+  const st = g.stateFor('P1');
+  for (const p of st.players) {
+    assert(Array.isArray(p.cards) && p.cards.length === 3, 'stateFor(' + p.id + ') 应亮牌');
+  }
+  const g2 = new Game(['P1', 'P2', 'P3'], { balances: { P1: 1000, P2: 1000, P3: 1000 }, deck: riggedDeck(), maxRounds: 1 });
+  g2.act('P2', 'fold');
+  g2.act('P3', 'call');
+  g2.act('P1', 'call');
+  assert.strictEqual(g2.phase, 'finished', '应摊牌结束');
+  const p2 = g2.result.players.find((p) => p.id === 'P2');
+  assert(Array.isArray(p2.cards) && p2.cards.length === 3, '摊牌时已弃牌者也应亮牌');
+  console.log('reveal cards: OK');
+}
+
 function testStore() {
   const tmp = path.join(os.tmpdir(), 'zhajinhua-test-' + Date.now() + '.json');
   process.env.ZHAJINHUA_DATA = tmp;
@@ -114,7 +137,7 @@ function testStore() {
   u.points = 5;
   u.lastReset = '2000-01-01';
   assert(store.canPlay(u), '隔日分数不足应恢复并可玩');
-  assert.strictEqual(u.points, 1000, '次日应恢复 1000');
+  assert.strictEqual(u.points, 5000, '次日应恢复 5000');
   u.points = 5;
   assert(!store.canPlay(u), '当天分数不足应不可玩');
   try { fs.unlinkSync(tmp); } catch (e) { /* 未落盘时文件不存在 */ }
@@ -168,7 +191,7 @@ async function testServer() {
       cl.send({ t: 'login', username: name, password: 'pass1234' });
       const login = await cl.waitFor((m) => m.t === 'login' && m.ok);
       cl.token = login.token;
-      assert.strictEqual(login.points, 1000, name + ' 初始 1000 分');
+      assert.strictEqual(login.points, 5000, name + ' 初始 5000 分');
     }
     a.send({ t: 'create_room', token: a.token, size: 3 });
     const created = await a.waitFor((m) => m.t === 'state' && m.room.code);
@@ -193,14 +216,100 @@ async function testServer() {
   }
 }
 
+// 倒计时 + 自动开下一局：3 人局结束应倒计时 5 秒，到点自动开新局
+async function testAutoStart() {
+  const tmp = path.join(os.tmpdir(), 'zhajinhua-auto-' + Date.now() + '.json');
+  const port = 23997;
+  const child = fork(path.join(__dirname, 'server.js'), [], {
+    env: { ...process.env, ZHAJINHUA_PORT: String(port), ZHAJINHUA_DATA: tmp },
+    silent: true,
+  });
+  const waitForLine = new Promise((resolve, reject) => {
+    const to = setTimeout(() => reject(new Error('server did not start')), 5000);
+    child.stdout.on('data', (d) => { if (String(d).includes('listening')) { clearTimeout(to); resolve(); } });
+  });
+  await waitForLine;
+
+  function client() {
+    const sock = net.connect(port, '127.0.0.1');
+    const msgs = [];
+    let buf = '';
+    sock.on('data', (chunk) => {
+      buf += chunk.toString('utf8');
+      let idx;
+      while ((idx = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 1);
+        if (line) msgs.push(JSON.parse(line));
+      }
+    });
+    const send = (o) => sock.write(JSON.stringify(o) + '\n');
+    const waitFor = (pred, timeoutMs) => new Promise((resolve, reject) => {
+      const start = Date.now();
+      const iv = setInterval(() => {
+        const m = msgs.find(pred);
+        if (m) { clearInterval(iv); resolve(m); }
+        else if (Date.now() - start > (timeoutMs || 8000)) { clearInterval(iv); reject(new Error('timeout waiting')); }
+      }, 20);
+    });
+    return { sock, msgs, send, waitFor };
+  }
+
+  try {
+    const a = client(), b = client(), c = client();
+    for (const [cl, name] of [[a, 'a1'], [b, 'b1'], [c, 'c1']]) {
+      cl.send({ t: 'register', username: name, password: 'pass1234' });
+      await cl.waitFor((m) => m.t === 'register' && m.ok);
+      cl.send({ t: 'login', username: name, password: 'pass1234' });
+      const login = await cl.waitFor((m) => m.t === 'login' && m.ok);
+      cl.token = login.token;
+    }
+    a.send({ t: 'create_room', token: a.token, size: 3 });
+    const created = await a.waitFor((m) => m.t === 'state' && m.room.code);
+    const code = created.room.code;
+    b.send({ t: 'join_room', token: b.token, code });
+    c.send({ t: 'join_room', token: c.token, code });
+    await b.waitFor((m) => m.t === 'state' && m.room.players.length === 3);
+    a.send({ t: 'start_game', token: a.token });
+    const started = await a.waitFor((m) => m.t === 'state' && m.room.game && m.room.game.phase === 'betting');
+    assert(started.room.game.pot === 30, '开局底池应为 30');
+    // b1 先行动弃牌，c1 再弃牌，剩 a1 获胜
+    const turnId = started.room.game.turn;
+    assert.strictEqual(turnId, 'b1', '首位行动应为 b1');
+    b.send({ t: 'act', token: b.token, act: 'fold' });
+    await a.waitFor((m) => m.t === 'state' && m.room.game && m.room.game.turn === 'c1');
+    c.send({ t: 'act', token: c.token, act: 'fold' });
+    const over = await a.waitFor((m) => m.t === 'game_over' && m.result);
+    assert(over.result.winners.length === 1, '弃牌胜应有 1 位赢家');
+    for (const p of over.result.players) {
+      assert(Array.isArray(p.cards) && p.cards.length === 3, p.id + ' 结算应亮出 3 张牌');
+    }
+    // 倒计时：3 人应为 5 秒
+    const st = await a.waitFor((m) => m.t === 'state' && m.room.nextGameAt && m.room.countdown === 5, 5000);
+    assert(st.room.phase === 'waiting', '倒计时期间房间应为等待态');
+    assert(st.room.nextGameAt > Date.now(), 'nextGameAt 应在未来');
+    // 等倒计时走完，自动开新局
+    const next = await a.waitFor((m) => m.t === 'state' && m.room.game && m.room.game.phase === 'betting' && m.room.game.pot === 30, 12000);
+    assert(next.room.phase === 'playing', '倒计时结束应自动开局');
+    assert(!next.room.lastResult, '新局开始应清掉旧结算');
+    console.log('auto-start: OK (countdown 5s, new game started)');
+    a.sock.destroy(); b.sock.destroy(); c.sock.destroy();
+  } finally {
+    child.kill();
+    try { fs.unlinkSync(tmp); } catch (e) { /* ignore */ }
+  }
+}
+
 (async () => {
   testEvaluate();
   testGameFoldWin();
   testGameShowdown();
   testBetCapAndCompare();
   testRoundCap();
+  testRevealCards();
   testStore();
   await testServer();
+  await testAutoStart();
   console.log('ALL TESTS PASSED');
 })().catch((e) => {
   console.error('TEST FAILED:', e);

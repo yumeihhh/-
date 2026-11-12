@@ -130,7 +130,7 @@ function createUser(db, username, password) {
   const salt = crypto.randomBytes(16).toString('hex');
   db.users[username] = {
     salt, hash: hashPassword(password, salt),
-    points: 1000, lastReset: todayStr(),
+    points: 5000, lastReset: todayStr(),
     friends: [], requests: [], createdAt: new Date().toISOString(),
   };
 }
@@ -141,11 +141,11 @@ function verifyUser(db, username, password) {
   return hashPassword(password, u.salt) === u.hash;
 }
 
-// 次日恢复：分数不足 10 且上次恢复不是今天，恢复到 1000
+// 次日恢复：分数不足 10 且上次恢复不是今天，恢复到 5000
 function dailyReset(user) {
   const t = todayStr();
   if (user.points < 10 && user.lastReset !== t) {
-    user.points = 1000;
+    user.points = 5000;
     user.lastReset = t;
     return true;
   }

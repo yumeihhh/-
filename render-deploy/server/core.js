@@ -53,6 +53,8 @@ function roomView(room, viewer) {
   };
   if (room.game) v.game = room.game.stateFor(viewer);
   if (room.lastResult) v.lastResult = room.lastResult;
+  // 对局结束后的倒计时：下一局自动开始的时间戳（毫秒）与总秒数
+  if (room.nextGameAt) { v.nextGameAt = room.nextGameAt; v.countdown = room.countdown; }
   return v;
 }
 
@@ -99,8 +101,40 @@ function finishGame(room) {
   room.game = null;
   if (room.timer) { clearTimeout(room.timer); room.timer = null; }
   if (room.players.length === 0) { rooms.delete(room.code); return; }
-  broadcast(room, { t: 'game_over', result: hist });
+  // 倒计时后自动开下一局：5-10 秒，人数越多越长（3 人 5 秒，每多 1 人 +1 秒，封顶 10 秒）
+  const countdownSec = Math.min(10, 5 + (room.players.length - 3));
+  room.countdown = countdownSec;
+  room.nextGameAt = Date.now() + countdownSec * 1000;
+  room.timer = setTimeout(() => autoStartNextGame(room), countdownSec * 1000);
+  broadcast(room, { t: 'game_over', result: hist, nextGameAt: room.nextGameAt, countdown: room.countdown });
   broadcastState(room);
+}
+
+// 倒计时结束自动开下一局：分数不够的玩家移出房间（当天不能玩），
+// 剩余 >= 3 人则直接开局，< 3 人留在等待区等房主手动开始。
+function autoStartNextGame(room) {
+  room.timer = null;
+  if (!rooms.has(room.code)) return;
+  if (room.phase !== 'waiting' || !room.nextGameAt) return;
+  room.nextGameAt = null; room.countdown = null;
+  const eligible = room.players.filter((u) => {
+    const usr = db.users[u];
+    return usr && store.canPlay(usr);
+  });
+  if (eligible.length !== room.players.length) {
+    room.players = eligible;
+    if (room.creator && !room.players.includes(room.creator)) room.creator = room.players[0] || null;
+    store.save(db); // canPlay 可能触发了次日恢复，保存
+  }
+  if (room.players.length === 0) { rooms.delete(room.code); return; }
+  if (room.players.length < 3) { broadcastState(room); return; }
+  const balances = {};
+  for (const u of room.players) balances[u] = db.users[u].points;
+  room.game = new Game(room.players.slice(), { balances });
+  room.phase = 'playing';
+  room.lastResult = null;
+  broadcastState(room);
+  armTimer(room);
 }
 
 function afterGameAction(room) {
@@ -125,7 +159,10 @@ function leaveRoom(room, username) {
   }
   room.players = room.players.filter((u) => u !== username);
   if (room.creator === username) room.creator = room.players[0] || null;
-  if (room.players.length === 0) { rooms.delete(room.code); return; }
+  if (room.players.length === 0) {
+    if (room.timer) { clearTimeout(room.timer); room.timer = null; }
+    rooms.delete(room.code); return;
+  }
   broadcastState(room);
 }
 
@@ -201,7 +238,7 @@ function handle(msg, reply, kind) {
       return send({ t: 'error', msg: '房间人数 3-10 人' });
     }
     if (findRoomOf(username)) return send({ t: 'error', msg: '请先退出当前房间' });
-    if (!store.canPlay(me)) return send({ t: 'error', msg: '分数不足，今天不能再玩了，明天恢复 1000 分' });
+    if (!store.canPlay(me)) return send({ t: 'error', msg: '分数不足，今天不能再玩了，明天恢复 5000 分' });
     const code = makeCode();
     const room = {
       code, size, creator: username, phase: 'waiting',
@@ -218,7 +255,7 @@ function handle(msg, reply, kind) {
     if (room.phase !== 'waiting') return send({ t: 'error', msg: '对局进行中，不能加入' });
     if (room.players.length >= room.size) return send({ t: 'error', msg: '房间已满' });
     if (findRoomOf(username)) return send({ t: 'error', msg: '请先退出当前房间' });
-    if (!store.canPlay(me)) return send({ t: 'error', msg: '分数不足，今天不能再玩了，明天恢复 1000 分' });
+    if (!store.canPlay(me)) return send({ t: 'error', msg: '分数不足，今天不能再玩了，明天恢复 5000 分' });
     room.players.push(username);
     broadcastState(room);
     return send({ t: 'state', room: roomView(room, username) });
@@ -245,6 +282,9 @@ function handle(msg, reply, kind) {
     room.game = new Game(room.players.slice(), { balances });
     room.phase = 'playing';
     room.lastResult = null;
+    // 手动开局时取消待执行的自动开局倒计时
+    if (room.timer) { clearTimeout(room.timer); room.timer = null; }
+    room.nextGameAt = null; room.countdown = null;
     broadcastState(room);
     armTimer(room);
     return send({ t: 'state', room: roomView(room, username) });

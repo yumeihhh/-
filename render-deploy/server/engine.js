@@ -237,9 +237,9 @@ class Game {
         id: p.id, delta: p.balance - p.startBalance, paid: p.paid,
         hand: p.folded ? '已弃牌' : evaluate(p.cards).name,
         handText: p.folded ? '已弃牌' : evaluate(p.cards).text,
-        cards: null,
+        // 对局结束翻开所有人的牌（含已弃牌者），供结算页展示
+        cards: p.cards.map(cardName),
       };
-      if (reason !== 'fold' && !p.folded) entry.cards = p.cards.map(cardName);
       return entry;
     });
     const winEv = this.winners.length
@@ -252,7 +252,7 @@ class Game {
     };
   }
 
-  // 给某个玩家看的牌桌状态：别人的牌一律隐藏；摊牌后亮出未弃牌者的牌
+  // 给某个玩家看的牌桌状态：别人的牌一律隐藏；对局结束翻开所有人的牌
   stateFor(viewerId) {
     return {
       phase: this.phase, round: this.round, currentBet: this.currentBet,
@@ -263,7 +263,7 @@ class Game {
       players: this.players.map((p) => ({
         id: p.id, seat: p.seat, folded: p.folded, seen: p.seen,
         paid: p.paid, balance: p.balance, left: p.left,
-        cards: (p.id === viewerId || (this.phase === 'finished' && !p.folded))
+        cards: (p.id === viewerId || this.phase === 'finished')
           ? p.cards.map(cardName) : null,
       })),
     };

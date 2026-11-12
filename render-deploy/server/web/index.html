@@ -215,7 +215,7 @@
         <button class="btn secondary" id="btnRegister">注册</button>
         <button class="btn" id="btnLogin">登录</button>
       </div>
-      <p class="muted" style="margin-top:12px;">首次使用请先注册；分数跟账号走，初始 1000 分，输光当天不能玩，次日恢复。</p>
+      <p class="muted" style="margin-top:12px;">首次使用请先注册；分数跟账号走，初始 5000 分，输光当天不能玩，次日恢复。</p>
     </div>
   </div>
 
@@ -324,6 +324,7 @@
     <h2>本局结束</h2>
     <p class="sub" id="resultSub"></p>
     <div id="resultRows"></div>
+    <p class="sub" id="resultCountdown" style="margin-top:12px;"></p>
     <div class="btnrow" style="margin-top:16px;">
       <button class="btn block" id="btnCloseResult">返回房间</button>
     </div>
@@ -360,6 +361,7 @@ var S = {
   turnStart: 0,
   shownResultKey: '',
   raiseInitForTurn: null,
+  countdownTimer: null,
 };
 
 function saveSession(token, username) {
@@ -429,10 +431,13 @@ function applySnapshot(snap) {
   if (S.screen === 'room') renderRoom();
   // 在房间里且房间没了（房散了或被移出），回主页
   if (S.screen === 'room' && !snap.room) {
+    hideResult();
     setScreen('home');
     loadHistory();
     return;
   }
+  // 新一局开始，关掉结算弹窗
+  if (snap.room && snap.room.phase === 'playing') hideResult();
   // 结算：房间回到等待且有新结算
   if (snap.room && snap.room.phase === 'waiting' && snap.room.lastResult) {
     var res = snap.room.lastResult;
@@ -620,9 +625,16 @@ function renderRoom() {
     var btn = $('btnStartGame');
     btn.style.display = isCreator ? '' : 'none';
     btn.disabled = room.players.length < 3;
-    $('lobbyHint').textContent = isCreator
-      ? (room.players.length < 3 ? '还差 ' + (3 - room.players.length) + ' 人才能开始。' : '人够了，点开始游戏发牌。')
-      : '等房主开始游戏，至少 3 人。';
+    var hint;
+    if (room.nextGameAt) {
+      var left = Math.max(0, Math.ceil((room.nextGameAt - Date.now()) / 1000));
+      hint = left > 0 ? left + ' 秒后自动开下一局' : '正在开下一局…';
+    } else {
+      hint = isCreator
+        ? (room.players.length < 3 ? '还差 ' + (3 - room.players.length) + ' 人才能开始。' : '人够了，点开始游戏发牌。')
+        : '等房主开始游戏，至少 3 人。';
+    }
+    $('lobbyHint').textContent = hint;
   } else {
     renderTable(room.game);
   }
@@ -837,6 +849,15 @@ $('btnCancelCompare').addEventListener('click', function () {
 });
 
 /* ---------- 结算弹窗 ---------- */
+function stopCountdown() {
+  if (S.countdownTimer) { clearInterval(S.countdownTimer); S.countdownTimer = null; }
+  var el = $('resultCountdown');
+  if (el) el.textContent = '';
+}
+function hideResult() {
+  stopCountdown();
+  $('resultModal').classList.add('hidden');
+}
 function showResult(res) {
   $('resultSub').textContent = '赢家：' + (res.winners || []).join('、') +
     (res.winHandText ? ' · ' + res.winHandText : '') + ' · 底池 ' + res.pot + ' 分';
@@ -850,9 +871,23 @@ function showResult(res) {
   }).join('');
   $('resultRows').innerHTML = rows;
   $('resultModal').classList.remove('hidden');
+  // 倒计时：按服务端给的 nextGameAt 本地走表，到点自动进下一局
+  stopCountdown();
+  var nextAt = S.snap && S.snap.room && S.snap.room.nextGameAt;
+  if (nextAt) {
+    var tick = function () {
+      var left = Math.ceil((nextAt - Date.now()) / 1000);
+      var el = $('resultCountdown');
+      if (!el) { stopCountdown(); return; }
+      if (left <= 0) { el.textContent = '正在开下一局…'; stopCountdown(); return; }
+      el.textContent = left + ' 秒后自动开下一局';
+    };
+    tick();
+    S.countdownTimer = setInterval(tick, 500);
+  }
 }
 $('btnCloseResult').addEventListener('click', function () {
-  $('resultModal').classList.add('hidden');
+  hideResult();
 });
 
 /* ---------- 其它按钮 ---------- */
